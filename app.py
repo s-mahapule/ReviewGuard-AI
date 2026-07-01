@@ -221,7 +221,7 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     st.markdown("**Navigation**")
-    page = st.radio("", [
+    page = st.radio("Navigation", [
         "🏠  Overview",
         "🔍  Review Analyzer",
         "📊  Purchase Impact",
