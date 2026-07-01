@@ -8,6 +8,8 @@ An end-to-end machine learning platform that classifies fake e-commerce reviews 
 ![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-red)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
+![Purchase Impact Dashboard](purchase_impact_analysis.png)
+
 ---
 
 ## Overview
@@ -24,12 +26,12 @@ ReviewGuard AI addresses this by:
 
 ## Features
 
-| Module | What it does |
+| Page | What it does |
 |---|---|
-| **Overview Dashboard** | Platform-wide KPIs, fake-ratio by category, trust erosion & rating inflation charts |
+| **Overview** | Platform-wide KPIs, fake ratio by category, trust erosion & rating inflation charts |
 | **Review Analyzer** | Paste any review text → instant fake-probability score, confidence gauge, and signal breakdown |
-| **Purchase Impact Simulator** | What-if slider to model rating correction from removing X% of fake reviews |
-| **Category Deep-Dive** | Per-category KPIs, rating histograms, sentiment scatter, top fake-review samples |
+| **Purchase Impact** | What-if slider to model rating correction from removing X% of fake reviews; confidence-bucket analysis; Sneaky Fakes table |
+| **Category Deep-Dive** | Per-category KPIs, rating histograms, confidence box plots, top fake-review samples |
 | **Model Comparison** | 6 ML models benchmarked on accuracy, precision, train time, and inference speed |
 
 ---
@@ -40,32 +42,37 @@ ReviewGuard AI addresses this by:
 - **Dashboard:** Streamlit
 - **ML:** Scikit-learn, XGBoost, TF-IDF vectorization
 - **Data:** Pandas, NumPy
-- **NLP/Sentiment:** TextBlob
-- **Visualization:** Plotly
+- **NLP/Sentiment:** TextBlob, NLTK
+- **Visualization:** Plotly, Matplotlib, Seaborn, WordCloud
 
 ---
 
 ## System Architecture
 
 ```
-Presentation Layer   → app.py (router), overview.py, analyzer.py,
-                        purchase_impact.py, category_deepdive.py,
-                        model_comparison.py
+app.py                    → sidebar router, page navigation, global styling
 
-Application Logic    → utils.py (data + inference + caching)
-                        insights.py (insight generator)
+pages/
+  overview.py              → platform-wide KPIs and category breakdowns
+  analyzer.py               → real-time single-review classifier
+  purchase_impact.py        → what-if simulator + Sneaky Fakes detection
+  category_deepdive.py      → per-category analytics
+  model_comparison.py       → benchmark table + radar chart
 
-Data Layer           → fake_reviews_dataset.csv (~40K rows)
-                        model.pkl (Naive Bayes)
-                        vectorizer.pkl (TF-IDF)
-                        df_with_scores.pkl (cached)
+utils.py                  → data loading, caching, model inference
+insights.py                → auto-generated narrative insights
+
+model.pkl                 → trained Multinomial Naive Bayes classifier
+vectorizer.pkl             → fitted TF-IDF vectorizer
+df_with_scores.pkl         → cached, pre-scored dataframe (for fast page loads)
+fake reviews dataset.csv  → raw dataset (~40K reviews)
 ```
 
 **Key design choices:**
-- Cache-first architecture: 30s cold start → <400ms warm navigation
-- File-based persistence (no database required)
-- Modular pages, one `render()` function per view
-- Stateless functions backed by shared `utils.py`
+- Cache-first architecture (`st.cache_resource` / `st.cache_data`): cold start ~28–30s → warm navigation <400ms
+- File-based persistence — no database required
+- One `render()` function per page, routed from `app.py`
+- Stateless helper functions in `utils.py`, shared across all pages
 
 ---
 
@@ -83,21 +90,27 @@ Naive Bayes Classification  (prob_fake, prob_real, confidence)
 Aggregation Engine  (fake_ratio, trust_erosion, rating_inflation)
 ```
 
+Training and experimentation for this pipeline live in the two notebooks:
+- `fake_review_detection.ipynb` — main EDA, feature engineering, and model training
+- `fake_review_2.ipynb` — additional experiments / iteration
+
 ### Model Benchmarks
+
+*(measured directly via wall-clock timing in the training notebook)*
 
 | Model | Accuracy | Precision | Train Time | Inference |
 |---|---|---|---|---|
-| Logistic Regression | 85.53% | 85.34% | 2.61s | 0.48s |
+| Logistic Regression | 85.53% | 85.34% | 2.61s | 0.475s |
 | **Multinomial Naive Bayes ★** | 83.95% | **85.37%** | 0.41s | **0.056s** |
-| Random Forest | 83.15% | 85.48% | 46.18s | 0.61s |
-| XGBoost | 81.62% | 79.40% | 25.08s | 0.18s |
-| Voting Classifier | 86.56% | 87.15% | 81.79s | 1.08s |
-| Stacking Classifier | 85.70% | 85.67% | 493.67s | 1.16s |
+| Random Forest | 83.15% | 85.48% | 46.18s | 0.608s |
+| XGBoost | 81.62% | 79.40% | 25.08s | 0.176s |
+| Voting Classifier | 86.56% | 87.15% | 81.79s | 1.083s |
+| Stacking Classifier | 85.70% | 85.67% | 493.67s | 1.155s |
 
 **Why Multinomial Naive Bayes was selected for production:**
 - 19× faster inference than the Voting Classifier (0.056s vs 1.08s) — critical for real-time screening
-- Precision equivalent to Random Forest, with a 2.6% accuracy gap that isn't operationally significant
-- Fully interpretable — TF-IDF weights show exactly which words drive classification
+- Precision equivalent to Random Forest, with a ~2.6% accuracy gap that isn't operationally significant
+- Fully interpretable — TF-IDF weights and log-probabilities show exactly which words drive classification
 - Trains in 0.41s with a trivial memory footprint; no GPU required
 
 ---
@@ -134,15 +147,33 @@ Aggregation Engine  (fake_ratio, trust_erosion, rating_inflation)
 git clone https://github.com/<your-username>/reviewguard-ai.git
 cd reviewguard-ai
 pip install -r requirements.txt
+python -m textblob.download_corpora
 streamlit run app.py
 ```
+
+Make sure `model.pkl`, `vectorizer.pkl`, and `fake reviews dataset.csv` are present in the project root (see [Data & Model Files](#data--model-files) below).
 
 ## Usage
 
 1. Launch the app with `streamlit run app.py`
-2. Navigate between the five dashboard views from the sidebar
+2. Navigate between the five dashboard pages from the sidebar
 3. Use **Review Analyzer** to test any review text against the classifier
-4. Use **Purchase Impact Simulator** to model the effect of fake-review removal on ratings
+4. Use **Purchase Impact** to model the effect of fake-review removal on ratings
+
+---
+
+## Data & Model Files
+
+This repo includes the trained model artifacts and dataset so it runs out of the box:
+
+| File | Size | Purpose |
+|---|---|---|
+| `fake reviews dataset.csv` | ~15 MB | Raw labeled review dataset (~40K rows) |
+| `model.pkl` | ~92 MB | Trained Multinomial Naive Bayes classifier |
+| `vectorizer.pkl` | ~108 KB | Fitted TF-IDF vectorizer |
+| `df_with_scores.pkl` | ~18 MB | Pre-scored dataframe, cached for fast dashboard loads |
+
+`model.pkl` is close to GitHub's file-size limits — it's tracked with **Git LFS** in this repo. If you clone without Git LFS installed, run `git lfs install && git lfs pull` after cloning to fetch it.
 
 ---
 
@@ -152,6 +183,7 @@ streamlit run app.py
 reviewguard-ai/
 ├── app.py
 ├── pages/
+│   ├── __init__.py
 │   ├── overview.py
 │   ├── analyzer.py
 │   ├── purchase_impact.py
@@ -159,11 +191,14 @@ reviewguard-ai/
 │   └── model_comparison.py
 ├── utils.py
 ├── insights.py
-├── data/
-│   └── fake_reviews_dataset.csv
-├── models/
-│   ├── model.pkl
-│   └── vectorizer.pkl
+├── fake_review_detection.ipynb
+├── fake_review_2.ipynb
+├── fake reviews dataset.csv
+├── model.pkl
+├── vectorizer.pkl
+├── df_with_scores.pkl
+├── purchase_impact_analysis.png
+├── confidence_purchase_impact.png
 ├── requirements.txt
 └── README.md
 ```
@@ -180,6 +215,9 @@ reviewguard-ai/
 
 ---
 
+## License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 ## Author
 
